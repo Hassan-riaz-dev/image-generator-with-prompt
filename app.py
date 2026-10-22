@@ -204,13 +204,12 @@ if submitted:
             result = client.interactions.create(
                 model="gemini-nano-banana-2.1",
                 input=final_input,
-                response_format={
-                    "type": "image",
-                    "mime_type": "image/png",
-                    "aspect_ratio": ratios[aspect_ratio],
-                    "image_size": image_size
-                }
-            )
+response_format={
+    "type": "image",
+    "mime_type": "image/jpeg",
+    "aspect_ratio": ratios[aspect_ratio],
+    "image_size": image_size
+}
 
         # Extract the actual generated image.
         generated = getattr(result, "output_image", None)
