@@ -1,61 +1,71 @@
 
 import os
+import io
 import base64
 import streamlit as st
 from google import genai
 from PIL import Image
-import io
 
-# ==========================================
-# PAGE CONFIG
-# ==========================================
+# ============================================
+# PAGE CONFIGURATION
+# ============================================
 st.set_page_config(
     page_title="PixelAI - Image Generator",
     page_icon="🎨",
     layout="wide"
 )
 
-# ==========================================
-# CUSTOM DESIGN
-# ==========================================
+# ============================================
+# CUSTOM CSS - DARK PURPLE & LIGHT TEXT
+# ============================================
 st.markdown("""
 <style>
 .stApp {
     background: linear-gradient(135deg, #0b1020, #191532);
-    color: #e2e8f0;
-}
-h1, h2, h3 {
-    color: #c4b5fd !important;
-}
-p, label, li, .stMarkdown {
     color: #dbeafe;
 }
+
 .pixel-title {
     text-align: center;
-    font-size: 42px;
+    font-size: clamp(30px, 4vw, 46px);
     font-weight: 800;
-    background: linear-gradient(90deg, #a78bfa, #67e8f9);
+    background: linear-gradient(90deg, #c4b5fd, #67e8f9);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
+
 .pixel-subtitle {
     text-align: center;
     color: #a5b4fc !important;
+    font-size: 16px;
     margin-bottom: 28px;
 }
+
+h1, h2, h3 {
+    color: #c4b5fd !important;
+}
+
+.stApp p,
+.stApp label,
+.stApp li {
+    color: #dbeafe;
+}
+
 .stTextArea textarea,
 .stTextInput input {
     background-color: #20243b !important;
     color: #f0f9ff !important;
     -webkit-text-fill-color: #f0f9ff !important;
     border: 1px solid #6366f1 !important;
-    border-radius: 10px;
+    border-radius: 10px !important;
 }
+
 .stTextArea textarea::placeholder,
 .stTextInput input::placeholder {
     color: #a5b4c8 !important;
     -webkit-text-fill-color: #a5b4c8 !important;
 }
+
 .stButton > button,
 .stDownloadButton > button,
 .stFormSubmitButton > button {
@@ -63,18 +73,33 @@ p, label, li, .stMarkdown {
     color: white !important;
     border: none;
     border-radius: 10px;
-    min-height: 45px;
-    font-weight: bold;
+    min-height: 46px;
+    font-weight: 700;
 }
+
+.stButton > button:hover,
+.stDownloadButton > button:hover,
+.stFormSubmitButton > button:hover {
+    border: 1px solid #a78bfa;
+}
+
 section[data-testid="stSidebar"] {
     background-color: #11152a;
+}
+
+.pixel-footer {
+    text-align: center;
+    color: #a5b4c8 !important;
+    font-size: 13px;
+    padding: 18px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
+
+# ============================================
 # API KEY
-# ==========================================
+# ============================================
 def get_api_key():
     try:
         key = st.secrets.get("GEMINI_API_KEY", "")
@@ -86,23 +111,25 @@ def get_api_key():
     return os.getenv("GEMINI_API_KEY", "").strip()
 
 
-# ==========================================
+# ============================================
 # HEADER
-# ==========================================
+# ============================================
 st.markdown(
     '<div class="pixel-title">🎨 PixelAI Image Generator</div>',
     unsafe_allow_html=True
 )
+
 st.markdown(
     '<div class="pixel-subtitle">'
-    'Write your idea. Generate a real AI image. Download it.'
+    'Describe your imagination and generate a real picture.'
     '</div>',
     unsafe_allow_html=True
 )
 
-# ==========================================
-# SIDEBAR
-# ==========================================
+
+# ============================================
+# SIDEBAR SETTINGS
+# ============================================
 with st.sidebar:
     st.header("⚙️ Image Settings")
 
@@ -119,7 +146,8 @@ with st.sidebar:
             "Fantasy Art",
             "Cyberpunk",
             "Minimalist",
-            "Pixel Art"
+            "Pixel Art",
+            "Studio Portrait"
         ]
     )
 
@@ -134,7 +162,7 @@ with st.sidebar:
         ]
     )
 
-    image_size = st.selectbox(
+    resolution = st.selectbox(
         "Image Resolution",
         ["1K", "2K"]
     )
@@ -142,30 +170,33 @@ with st.sidebar:
     st.divider()
     st.caption("Image generation powered by Google Gemini.")
 
-# ==========================================
-# USER PROMPT
-# ==========================================
-st.subheader("✨ Describe the image you want")
 
-with st.form("generate_form"):
+# ============================================
+# PROMPT INPUT
+# ============================================
+st.subheader("✨ What picture do you want?")
+
+with st.form("image_form"):
     prompt = st.text_area(
-        "Image description",
+        "Describe your image",
         placeholder=(
-            "Example: A beautiful white horse running "
-            "through a green field at sunset..."
+            "Example: A white sports car on a mountain road "
+            "at sunset, cinematic lighting, realistic details..."
         ),
         height=140
     )
 
-    submitted = st.form_submit_button(
+    generate = st.form_submit_button(
         "🎨 Generate My Image",
         use_container_width=True
     )
 
-# ==========================================
+
+# ============================================
 # IMAGE GENERATION
-# ==========================================
-if submitted:
+# ============================================
+if generate:
+
     if not prompt.strip():
         st.warning("Please enter an image description.")
         st.stop()
@@ -174,7 +205,7 @@ if submitted:
 
     if not api_key:
         st.error(
-            "GEMINI_API_KEY is missing. Add it in "
+            "GEMINI_API_KEY missing. Add it in "
             "Streamlit Cloud → Settings → Secrets."
         )
         st.stop()
@@ -187,95 +218,106 @@ if submitted:
         "Widescreen (16:9)": "16:9"
     }
 
-    # Send the user's idea directly to the image model.
-    # No text-only prompt enhancement is performed.
-    final_input = (
-        f"Generate an image in this art style: {style}.\n"
-        f"Image description: {prompt.strip()}\n"
-        "Create the actual image, not a written description."
+    # Send the prompt directly to an image-generation model.
+    image_prompt = (
+        f"Create an actual image. Do not return a written description. "
+        f"Art style: {style}. "
+        f"Image description: {prompt.strip()}"
     )
 
     try:
         client = genai.Client(api_key=api_key)
 
         with st.spinner(
-            "✨ Gemini is generating your image. Please wait..."
+            "🎨 Generating your picture... Please wait."
         ):
             result = client.interactions.create(
-                model="gemini-nano-banana-2.1",
-                input=final_input,
-response_format={
-    "type": "image",
-    "mime_type": "image/jpeg",
-    "aspect_ratio": ratios[aspect_ratio],
-    "image_size": image_size
-}
+                model="gemini-3.1-flash-image",
+                input=image_prompt,
+                response_format={
+                    "type": "image",
+                    "mime_type": "image/jpeg",
+                    "aspect_ratio": ratios[aspect_ratio],
+                    "image_size": resolution
+                }
+            )
 
-        # Extract the actual generated image.
-        generated = getattr(result, "output_image", None)
+        # Get the actual generated image, not text.
+        generated_image = getattr(result, "output_image", None)
 
-        if generated is None or not getattr(generated, "data", None):
+        if not generated_image or not generated_image.data:
             st.error(
-                "Gemini did not return an image. Check model access, "
-                "API quota, and image-generation availability."
+                "No image was returned. Please try again or "
+                "check your Gemini model access and API quota."
             )
             st.stop()
 
-        image_bytes = base64.b64decode(generated.data)
+        image_bytes = base64.b64decode(generated_image.data)
 
-        # Verify that the returned bytes form a valid image.
+        # Validate image bytes.
         image = Image.open(io.BytesIO(image_bytes))
         image.load()
 
-        # Show the actual image only.
-        st.success("Your image is ready!")
+        # Convert to JPEG for consistent downloads.
+        jpg_buffer = io.BytesIO()
+        image.convert("RGB").save(
+            jpg_buffer,
+            format="JPEG",
+            quality=95
+        )
+        jpg_bytes = jpg_buffer.getvalue()
+
+        # Display the generated picture only.
+        st.success("Your picture is ready!")
 
         st.image(
-            image,
+            jpg_bytes,
+            caption="Generated with PixelAI",
             use_container_width=True
         )
 
-        # Download the generated image.
-        output = io.BytesIO()
-        image.save(output, format="PNG")
-        output.seek(0)
-
         st.download_button(
-            "⬇️ Download Image",
-            data=output.getvalue(),
-            file_name="pixelai_image.png",
-            mime="image/png",
+            label="⬇️ Download Your Picture",
+            data=jpg_bytes,
+            file_name="pixelai_image.jpg",
+            mime="image/jpeg",
             use_container_width=True
         )
 
     except Exception as error:
         message = str(error)
-
         st.error("Image generation failed.")
 
-        if "429" in message or "RESOURCE_EXHAUSTED" in message:
+        if "404" in message or "NOT_FOUND" in message:
             st.warning(
-                "Your Gemini API quota or rate limit may have been reached."
+                "The image model may not be available to your API key. "
+                "Check the official Gemini model documentation."
+            )
+        elif "400" in message or "INVALID_ARGUMENT" in message:
+            st.warning(
+                "The API rejected a request setting. Check the "
+                "supported image format, ratio, and resolution."
             )
         elif "403" in message or "PERMISSION_DENIED" in message:
             st.warning(
-                "Check your API key and whether your account "
-                "has permission to use the image model."
+                "Check your API key, account permissions, and "
+                "image-generation access."
             )
-        elif "404" in message or "NOT_FOUND" in message:
+        elif "429" in message or "RESOURCE_EXHAUSTED" in message:
             st.warning(
-                "The image model may not be available to your account. "
-                "Check Google's current Gemini image-generation docs."
+                "Your API quota or rate limit may have been reached."
             )
         else:
             st.caption(message[:700])
 
-# ==========================================
+
+# ============================================
 # FOOTER
-# ==========================================
+# ============================================
 st.divider()
+
 st.markdown(
-    '<div style="text-align:center;color:#a5b4c8;">'
+    '<div class="pixel-footer">'
     'PixelAI · Streamlit + Gemini Image Generation'
     '</div>',
     unsafe_allow_html=True
